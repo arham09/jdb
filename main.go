@@ -1,4 +1,4 @@
-package main
+package jdb
 
 import (
 	"encoding/json"
@@ -66,9 +66,9 @@ func New(dir string, opt *Options) (*Driver, error) {
 	return &driver, os.MkdirAll(dir, 0755)
 }
 
-func (d *Driver) Write(collection string, v interface{}) error {
+func (d *Driver) Write(collection string, v interface{}) (string, error) {
 	if collection == "" {
-		return fmt.Errorf("missing collection, no place to save data")
+		return "", fmt.Errorf("missing collection, no place to save data")
 	}
 
 	mutex := d.getMutex(collection)
@@ -82,7 +82,7 @@ func (d *Driver) Write(collection string, v interface{}) error {
 	tmpPath := fnlPath + ".tmp"
 
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
+		return "", err
 	}
 
 	value := reflect.ValueOf(v).Elem()
@@ -93,16 +93,16 @@ func (d *Driver) Write(collection string, v interface{}) error {
 
 	b, err := json.MarshalIndent(v, "", "\t")
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	b = append(b, byte('\n'))
 
 	if err := ioutil.WriteFile(tmpPath, b, 0644); err != nil {
-		return err
+		return "", err
 	}
 
-	return os.Rename(tmpPath, fnlPath)
+	return ID, os.Rename(tmpPath, fnlPath)
 }
 
 func (d *Driver) Read(collection, ID string, v interface{}) error {
@@ -206,27 +206,27 @@ type User struct {
 	Age  int
 }
 
-func main() {
-	dir := "./"
+// func main() {
+// 	dir := "./db"
 
-	db, err := New(dir, nil)
-	if err != nil {
-		fmt.Println("ERROR: ", err)
-		panic(err)
-	}
+// 	db, err := New(dir, nil)
+// 	if err != nil {
+// 		fmt.Println("ERROR: ", err)
+// 		panic(err)
+// 	}
 
-	users := []User{
-		{
-			Name: "Andra",
-			Age:  10,
-		},
-		{
-			Name: "Anggun",
-			Age:  15,
-		},
-	}
+// 	users := []User{
+// 		{
+// 			Name: "Andra",
+// 			Age:  10,
+// 		},
+// 		{
+// 			Name: "Anggun",
+// 			Age:  15,
+// 		},
+// 	}
 
-	for _, user := range users {
-		db.Write("users", &user)
-	}
-}
+// 	for _, user := range users {
+// 		db.Write("users", &user)
+// 	}
+// }
