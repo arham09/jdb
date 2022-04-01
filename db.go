@@ -6,10 +6,8 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sync"
 
-	"github.com/google/uuid"
 	"github.com/jcelliott/lumber"
 )
 
@@ -37,6 +35,7 @@ type (
 	}
 )
 
+// New create a new instance of Driver
 func New(dir string, opt *Options) (*Driver, error) {
 	dir = filepath.Clean(dir)
 
@@ -66,66 +65,67 @@ func New(dir string, opt *Options) (*Driver, error) {
 	return &driver, os.MkdirAll(dir, 0755)
 }
 
-func (d *Driver) Write(collection string, v interface{}) (string, error) {
+func (d *Driver) Write(collection, identifier string, v interface{}) (string, error) {
 	if collection == "" {
 		return "", fmt.Errorf("missing collection, no place to save data")
 	}
 
+	if identifier == "" {
+		return "", fmt.Errorf("missing identifier")
+	}
+
+	return d.doWrite(collection, identifier, v)
+}
+
+func (d *Driver) doWrite(collection, ID string, v interface{}) (string, error) {
 	mutex := d.getMutex(collection)
 	mutex.Lock()
 	defer mutex.Unlock()
-
-	ID := uuid.New().String()
 
 	dir := filepath.Join(d.dir, collection)
 	fnlPath := filepath.Join(dir, ID+".json")
 	tmpPath := fnlPath + ".tmp"
 
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", err
-	}
-
-	value := reflect.ValueOf(v).Elem()
-	field := value.FieldByName("ID")
-	if field.IsValid() {
-		field.SetString(ID)
+		return ID, err
 	}
 
 	b, err := json.MarshalIndent(v, "", "\t")
 	if err != nil {
-		return "", err
+		return ID, err
 	}
 
 	b = append(b, byte('\n'))
 
 	if err := ioutil.WriteFile(tmpPath, b, 0644); err != nil {
-		return "", err
+		return ID, err
 	}
 
+	d.log.Info("done creating: %s", ID)
 	return ID, os.Rename(tmpPath, fnlPath)
 }
 
-func (d *Driver) Read(collection, ID string, v interface{}) error {
+func (d *Driver) Read(collection, identifier string) (string, error) {
 	if collection == "" {
-		return fmt.Errorf("missing collection, no place to get data")
+		return "", fmt.Errorf("missing collection, no place to get data")
 	}
 
-	if ID == "" {
-		return fmt.Errorf("missing ID, no identifier to get data")
+	if identifier == "" {
+		return "", fmt.Errorf("missing ID, no identifier to get data")
 	}
 
-	record := filepath.Join(d.dir, collection, ID)
+	record := filepath.Join(d.dir, collection, identifier)
 
 	if _, err := stat(record); err != nil {
-		return err
+		return "", err
 	}
 
 	b, err := ioutil.ReadFile(record + ".json")
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	return json.Unmarshal(b, &v)
+	return string(b), nil
 }
 
 func (d *Driver) ReadAll(collection string) ([]string, error) {
@@ -158,7 +158,19 @@ func (d *Driver) ReadAll(collection string) ([]string, error) {
 	return records, nil
 }
 
+func (d *Driver) Update(collection, ID string, v interface{}) (string, error) {
+	if err := d.doDelete(collection, ID); err != nil {
+		return ID, err
+	}
+
+	return d.doWrite(collection, ID, v)
+}
+
 func (d *Driver) Delete(collection, ID string) error {
+	return d.doDelete(collection, ID)
+}
+
+func (d *Driver) doDelete(collection, ID string) error {
 	path := filepath.Join(collection, ID)
 	mutex := d.getMutex(collection)
 
@@ -199,34 +211,3 @@ func stat(path string) (file os.FileInfo, err error) {
 	}
 	return
 }
-
-type User struct {
-	ID   string
-	Name string
-	Age  int
-}
-
-// func main() {
-// 	dir := "./db"
-
-// 	db, err := New(dir, nil)
-// 	if err != nil {
-// 		fmt.Println("ERROR: ", err)
-// 		panic(err)
-// 	}
-
-// 	users := []User{
-// 		{
-// 			Name: "Andra",
-// 			Age:  10,
-// 		},
-// 		{
-// 			Name: "Anggun",
-// 			Age:  15,
-// 		},
-// 	}
-
-// 	for _, user := range users {
-// 		db.Write("users", &user)
-// 	}
-// }
